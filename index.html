@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>List Scanner</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Georgia', serif;
+      background: #f5f5f0;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 32px 16px;
+    }
+    .container { max-width: 480px; width: 100%; }
+    h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; letter-spacing: -0.5px; margin-bottom: 4px; }
+    .subtitle { font-size: 13px; color: #888; margin-bottom: 24px; font-family: sans-serif; }
+
+    .upload-zone {
+      border: 2px dashed #ccc;
+      border-radius: 12px;
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      background: #fff;
+      transition: border-color 0.2s;
+    }
+    .upload-zone:hover { border-color: #999; }
+    .upload-zone .icon { font-size: 36px; margin-bottom: 12px; }
+    .upload-zone p { font-size: 14px; color: #555; font-family: sans-serif; }
+    .upload-zone small { font-size: 12px; color: #aaa; display: block; margin-top: 6px; font-family: sans-serif; }
+
+    .preview-wrap { position: relative; margin-bottom: 16px; }
+    .preview-wrap img { width: 100%; border-radius: 10px; max-height: 260px; object-fit: cover; display: block; }
+    .clear-btn {
+      position: absolute; top: 8px; right: 8px;
+      background: rgba(0,0,0,0.5); color: #fff;
+      border: none; border-radius: 20px; padding: 4px 10px;
+      font-size: 12px; cursor: pointer; font-family: sans-serif;
+    }
+
+    .extract-btn {
+      width: 100%; padding: 14px;
+      background: #1a1a1a; color: #fff;
+      border: none; border-radius: 10px;
+      font-size: 15px; font-family: 'Georgia', serif;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .extract-btn:disabled { background: #aaa; cursor: not-allowed; }
+
+    .error { color: #c0392b; font-size: 13px; text-align: center; margin-top: 12px; font-family: sans-serif; }
+
+    .checklist-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin: 20px 0 12px;
+    }
+    .checklist-header span { font-size: 13px; color: #888; font-family: sans-serif; }
+    .all-done { color: #27ae60 !important; font-weight: 600; }
+
+    .checklist {
+      background: #fff; border-radius: 12px;
+      overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    .checklist-item {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 18px; cursor: pointer;
+      border-bottom: 1px solid #f0f0f0;
+      transition: background 0.15s;
+    }
+    .checklist-item:last-child { border-bottom: none; }
+    .checklist-item:hover { background: #fafafa; }
+    .checkbox {
+      width: 22px; height: 22px; border-radius: 6px;
+      border: 2px solid #ccc; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s;
+    }
+    .checkbox.checked { background: #27ae60; border-color: #27ae60; }
+    .checkbox.checked::after { content: '✓'; color: #fff; font-size: 13px; }
+    .item-label { font-size: 15px; color: #1a1a1a; transition: all 0.15s; font-family: sans-serif; }
+    .item-label.checked { color: #aaa; text-decoration: line-through; }
+
+    .reset-btn {
+      margin-top: 16px; width: 100%; padding: 12px;
+      background: transparent; color: #888;
+      border: 1px solid #ddd; border-radius: 10px;
+      font-size: 13px; cursor: pointer; font-family: sans-serif;
+    }
+
+    #upload-input { display: none; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>List Scanner</h1>
+    <p class="subtitle">Upload a screenshot of any list and get a tappable checklist instantly.</p>
+
+    <div id="upload-zone" class="upload-zone">
+      <div class="icon">📋</div>
+      <p>Tap to upload or drag a screenshot here</p>
+      <small>Works with iMessage, Notes, photos of paper lists</small>
+      <input type="file" id="upload-input" accept="image/*" />
+    </div>
+
+    <div id="image-section" class="hidden">
+      <div class="preview-wrap">
+        <img id="preview" src="" alt="Uploaded" />
+        <button class="clear-btn" onclick="reset()">✕ Clear</button>
+      </div>
+      <button id="extract-btn" class="extract-btn" onclick="extractItems()">Extract List</button>
+      <p id="error" class="error hidden"></p>
+    </div>
+
+    <div id="checklist-section" class="hidden">
+      <div class="checklist-header">
+        <span id="progress-label">0 of 0 done</span>
+        <span id="all-done-label" class="all-done hidden">All done! 🎉</span>
+      </div>
+      <div id="checklist" class="checklist"></div>
+      <button class="reset-btn" onclick="reset()">Scan another list</button>
+    </div>
+  </div>
+
+  <script>
+    let imageBase64 = null;
+    let imageMediaType = null;
+    let items = [];
+    let checked = [];
+
+    const uploadZone = document.getElementById('upload-zone');
+    const uploadInput = document.getElementById('upload-input');
+    const imageSection = document.getElementById('image-section');
+    const checklistSection = document.getElementById('checklist-section');
+    const preview = document.getElementById('preview');
+    const extractBtn = document.getElementById('extract-btn');
+    const errorEl = document.getElementById('error');
+    const checklistEl = document.getElementById('checklist');
+    const progressLabel = document.getElementById('progress-label');
+    const allDoneLabel = document.getElementById('all-done-label');
+
+    uploadZone.addEventListener('click', () => uploadInput.click());
+    uploadZone.addEventListener('dragover', e => e.preventDefault());
+    uploadZone.addEventListener('drop', e => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); });
+    uploadInput.addEventListener('change', e => handleFile(e.target.files[0]));
+
+    function handleFile(file) {
+      if (!file || !file.type.startsWith('image/')) return;
+      imageMediaType = file.type;
+      const reader = new FileReader();
+      reader.onload = e => {
+        const dataUrl = e.target.result;
+        imageBase64 = dataUrl.split(',')[1];
+        preview.src = dataUrl;
+        uploadZone.classList.add('hidden');
+        imageSection.classList.remove('hidden');
+        checklistSection.classList.add('hidden');
+        errorEl.classList.add('hidden');
+        extractBtn.disabled = false;
+        extractBtn.textContent = 'Extract List';
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function extractItems() {
+      extractBtn.disabled = true;
+      extractBtn.textContent = 'Extracting...';
+      errorEl.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/claude-vision', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1000,
+            messages: [{
+              role: 'user',
+              content: [
+                { type: 'image', source: { type: 'base64', media_type: imageMediaType, data: imageBase64 } },
+                { type: 'text', text: 'Extract every shopping item or list item from this image. Items may be spread across multiple text messages or bubbles. Return ONLY a JSON array of strings, no preamble, no markdown, no backticks. Example: ["milk","eggs","bread"]' }
+              ]
+            }]
+          })
+        });
+
+        const data = await res.json();
+        if (data.error) throw new Error(data.error.message);
+
+        const text = data.content?.find(b => b.type === 'text')?.text || '';
+        items = JSON.parse(text.replace(/```json|```/g, '').trim());
+        checked = new Array(items.length).fill(false);
+        renderChecklist();
+        imageSection.classList.add('hidden');
+        checklistSection.classList.remove('hidden');
+      } catch (err) {
+        errorEl.textContent = 'Could not extract items. Please try a clearer image.';
+        errorEl.classList.remove('hidden');
+        extractBtn.disabled = false;
+        extractBtn.textContent = 'Extract List';
+      }
+    }
+
+    function renderChecklist() {
+      checklistEl.innerHTML = '';
+      items.forEach((item, i) => {
+        const div = document.createElement('div');
+        div.className = 'checklist-item';
+        div.onclick = () => toggle(i);
+        div.innerHTML = `
+          <div class="checkbox ${checked[i] ? 'checked' : ''}"></div>
+          <span class="item-label ${checked[i] ? 'checked' : ''}">${item}</span>
+        `;
+        checklistEl.appendChild(div);
+      });
+      updateProgress();
+    }
+
+    function toggle(i) {
+      checked[i] = !checked[i];
+      renderChecklist();
+    }
+
+    function updateProgress() {
+      const done = checked.filter(Boolean).length;
+      progressLabel.textContent = `${done} of ${items.length} done`;
+      if (done === items.length && items.length > 0) {
+        allDoneLabel.classList.remove('hidden');
+      } else {
+        allDoneLabel.classList.add('hidden');
+      }
+    }
+
+    function reset() {
+      imageBase64 = null;
+      imageMediaType = null;
+      items = [];
+      checked = [];
+      preview.src = '';
+      uploadInput.value = '';
+      uploadZone.classList.remove('hidden');
+      imageSection.classList.add('hidden');
+      checklistSection.classList.add('hidden');
+      errorEl.classList.add('hidden');
+    }
+  </script>
+</body>
+</html>
